@@ -15,13 +15,15 @@ export const extractDocumentDetails = async (fileBase64: string, mimeType: strin
   if (!client) throw new Error("API Key not found");
 
   const prompt = `
-    Analyze this legal/banking document. Extract the following key details:
-    - Document Type (e.g., Sale Deed, Notice, Valuation Report)
+    Analyze this legal/banking document (e.g., Valuation Report, Sale Deed, Notice). 
+    Extract the following details:
+    - Document Type
     - Date of Document
-    - Key Parties Involved (Names)
-    - Property Address/Description (if applicable)
-    - Financial Amounts (if applicable)
-    - Any Encumbrances or Legal Flags mentioned.
+    - Key Parties
+    - Financial Amounts mentioned (list them)
+    - **Assessed Value**: The fair market value or property value mentioned (numeric).
+    - **Forced Sale Value**: The distressed sale value or expected recovery value mentioned (numeric).
+    - Flags: Any legal encumbrances or issues.
 
     Return the data in a structured JSON format.
   `;
@@ -50,6 +52,8 @@ export const extractDocumentDetails = async (fileBase64: string, mimeType: strin
             parties: { type: Type.ARRAY, items: { type: Type.STRING } },
             propertyDescription: { type: Type.STRING },
             amounts: { type: Type.ARRAY, items: { type: Type.STRING } },
+            assessedValue: { type: Type.NUMBER, description: "Market value found in doc" },
+            forcedSaleValue: { type: Type.NUMBER, description: "Distressed/Recovery value found in doc" },
             flags: { type: Type.ARRAY, items: { type: Type.STRING } },
             confidenceScore: { type: Type.NUMBER, description: "Confidence score between 0 and 1" }
           }

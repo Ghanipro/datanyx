@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Asset, Document, LegalEvent, AssetStatus } from '../types';
 import { 
   ArrowLeft, Upload, FileText, AlertTriangle, 
-  Gavel, Clock, MapPin, Sparkles, Send, AlertCircle 
+  Gavel, Clock, MapPin, Sparkles, Send, AlertCircle, DollarSign
 } from 'lucide-react';
 import { extractDocumentDetails, predictRecoveryValue, generateLegalNotice } from '../services/geminiService';
 import { addLegalEvent, scheduleAuction } from '../services/apiClient';
@@ -275,6 +275,24 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
                           <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded text-sm text-slate-600 dark:text-slate-300 space-y-1">
                             <p><strong>Type:</strong> {doc.extractedData.documentType}</p>
                             <p><strong>Parties:</strong> {doc.extractedData.parties?.join(', ')}</p>
+                            
+                            {/* Display Financial Value if Found */}
+                            {(doc.extractedData.assessedValue || doc.extractedData.forcedSaleValue) && (
+                               <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
+                                   {doc.extractedData.assessedValue && (
+                                       <p className="flex items-center font-medium text-green-700 dark:text-green-400">
+                                           <DollarSign className="w-3 h-3 mr-1" />
+                                           Assessed Value: ₹{doc.extractedData.assessedValue.toLocaleString()}
+                                       </p>
+                                   )}
+                                   {doc.extractedData.forcedSaleValue && (
+                                       <p className="flex items-center text-xs text-slate-500 dark:text-slate-400">
+                                           Expected Recovery (Forced Sale): ₹{doc.extractedData.forcedSaleValue.toLocaleString()}
+                                       </p>
+                                   )}
+                               </div>
+                            )}
+
                             {doc.extractedData.flags && doc.extractedData.flags.length > 0 && (
                               <div className="mt-2 flex items-start text-red-600 dark:text-red-400">
                                 <AlertTriangle className="w-4 h-4 mr-1 flex-shrink-0" />

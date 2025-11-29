@@ -16,7 +16,7 @@ import { Chatbot } from './components/Chatbot';
 import { BidderLanding } from './components/BidderLanding';
 import { Asset, User, Notification, AssetType, AssetStatus } from './types';
 import { fetchAssets, createAsset, fetchNotifications } from './services/apiClient';
-import { analyzeAssetRisk, generateAssetSummary } from './services/geminiService';
+import { analyzeAssetRisk, generateAssetSummary, extractDocumentDetails } from './services/geminiService';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -124,6 +124,7 @@ function App() {
     const description = formData.get('description') as string;
     const amount = Number(formData.get('amount'));
     const type = formData.get('type') as string;
+    const docFile = formData.get('document') as File;
 
     const needsArea = [AssetType.RESIDENTIAL, AssetType.COMMERCIAL, AssetType.INDUSTRIAL, AssetType.LAND];
     if (needsArea.includes(type as AssetType) && !formData.get('areaSqFt')) {
@@ -135,16 +136,38 @@ function App() {
     setAiAnalyzing(true);
     let riskData = { riskScore: 50, recoveryProbability: 50 };
     let summaryData = { summary: description, keywords: [] };
+    let extractedDocData = {};
     
     try {
-      const [rData, sData] = await Promise.all([
+      // Run parallel AI tasks: Risk Analysis, Summary Gen, and Doc Extraction
+      const docPromise = new Promise(async (resolve) => {
+         if (docFile && docFile.size > 0) {
+           const reader = new FileReader();
+           reader.onloadend = async () => {
+              try {
+                const base64String = (reader.result as string).split(',')[1];
+                const extracted = await extractDocumentDetails(base64String, docFile.type);
+                resolve(extracted);
+              } catch (e) { resolve({}); }
+           };
+           reader.readAsDataURL(docFile);
+         } else {
+           resolve({});
+         }
+      });
+
+      const [rData, sData, docData] = await Promise.all([
         analyzeAssetRisk(description, amount, type),
-        generateAssetSummary(description, type)
+        generateAssetSummary(description, type),
+        docPromise
       ]);
+      
       riskData = rData;
       summaryData = sData;
+      extractedDocData = docData;
+
     } catch (e) {
-      console.error("AI Analysis failed, using defaults");
+      console.error("AI Analysis failed, using defaults", e);
     }
     setAiAnalyzing(false);
 
@@ -159,6 +182,7 @@ function App() {
     
     formData.append('summary', summaryData.summary);
     formData.append('keywords', summaryData.keywords.join(', '));
+    formData.append('extractedData', JSON.stringify(extractedDocData));
 
     try {
       const created = await createAsset(formData);
@@ -220,7 +244,7 @@ function App() {
                <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
                  <Building2 className="w-5 h-5 text-white" />
                </div>
-               FortiFi
+               RecoverAI
              </div>
           ) : (
             <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center mx-auto">
