@@ -1,3 +1,4 @@
+
 export enum AssetType {
   RESIDENTIAL = 'Residential',
   COMMERCIAL = 'Commercial',
@@ -13,6 +14,26 @@ export enum AssetStatus {
   AUCTION_SCHEDULED = 'Auction Scheduled',
   SOLD = 'Sold',
   SETTLED = 'Settled'
+}
+
+export type UserRole = 'Recovery Officer' | 'Bidder';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  branch?: string;
+  token?: string;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'alert' | 'info' | 'success';
+  isRead: boolean;
+  createdAt: string;
 }
 
 export interface Document {
@@ -53,13 +74,33 @@ export interface Asset {
   description: string;
 }
 
+export interface Bid {
+  bidderName: string;
+  amount: number;
+  timestamp: string;
+}
+
 export interface Auction {
   id: string;
   assetId: string;
+  assetSnapshot?: {
+    borrowerName: string;
+    imageUrl: string;
+    city: string;
+  };
   startDate: string;
   endDate: string;
   reservePrice: number;
   currentBid: number;
   status: 'upcoming' | 'live' | 'ended';
-  bidders: number;
+  bids: Bid[];
+  timeLeft?: string; // Calculated on frontend
+}
+
+export interface Bidder {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  kycStatus: 'verified' | 'pending' | 'rejected';
 }

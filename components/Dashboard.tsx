@@ -1,7 +1,8 @@
+
 import React from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, LineChart, Line 
+  PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { Asset, AssetStatus, AssetType } from '../types';
 import { AlertTriangle, TrendingUp, DollarSign, Building, AlertCircle } from 'lucide-react';
@@ -19,8 +20,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ assets }) => {
   
   const statusData = Object.values(AssetStatus).map(status => ({
     name: status,
-    value: assets.filter(a => a.status === status).length
-  })).filter(d => d.value > 0);
+    count: assets.filter(a => a.status === status).length
+  }));
 
   const typeData = Object.values(AssetType).map(type => ({
     name: type,
@@ -29,17 +30,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ assets }) => {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm font-medium text-slate-500">Total Exposure</p>
               <h3 className="text-2xl font-bold text-slate-800 mt-1">
-                ${(totalOutstanding / 1000000).toFixed(2)}M
+                ₹{(totalOutstanding / 10000000).toFixed(2)} Cr
               </h3>
             </div>
             <div className="p-2 bg-red-50 rounded-lg">
-              <DollarSign className="w-6 h-6 text-red-600" />
+              <span className="text-2xl text-red-600">₹</span>
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm text-red-600">
@@ -53,7 +55,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ assets }) => {
             <div>
               <p className="text-sm font-medium text-slate-500">Recovery Potential</p>
               <h3 className="text-2xl font-bold text-slate-800 mt-1">
-                ${(totalPotentialRecovery / 1000000).toFixed(2)}M
+                ₹{(totalPotentialRecovery / 10000000).toFixed(2)} Cr
               </h3>
             </div>
             <div className="p-2 bg-green-50 rounded-lg">
@@ -101,7 +103,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ assets }) => {
         </div>
       </div>
 
+      {/* Graphs */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Pie Chart - Assets by Type */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
           <h4 className="text-lg font-semibold text-slate-800 mb-6">Asset Portfolio by Type</h4>
           <div className="h-64">
@@ -122,29 +127,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ assets }) => {
                   ))}
                 </Pie>
                 <Tooltip />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex justify-center gap-4 mt-4 flex-wrap">
-            {typeData.map((entry, index) => (
-              <div key={entry.name} className="flex items-center text-sm">
-                <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
-                {entry.name} ({entry.value})
-              </div>
-            ))}
-          </div>
         </div>
 
+        {/* Bar Chart - Status Distribution */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
           <h4 className="text-lg font-semibold text-slate-800 mb-6">Case Status Distribution</h4>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={statusData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" />
-                <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} />
+              <BarChart data={statusData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" tick={{fontSize: 10}} interval={0} angle={-15} textAnchor="end" />
+                <YAxis allowDecimals={false} />
                 <Tooltip />
-                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Assets" />
               </BarChart>
             </ResponsiveContainer>
           </div>

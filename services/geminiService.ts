@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 const getClient = () => {
@@ -125,5 +126,42 @@ export const generateLegalNotice = async (borrowerName: string, amount: number, 
   } catch (error) {
     console.error("Generation error:", error);
     throw error;
+  }
+};
+
+export const analyzeAssetRisk = async (description: string, amount: number, type: string) => {
+  const client = getClient();
+  if (!client) return { riskScore: 50, recoveryProbability: 50 };
+
+  const prompt = `
+    Analyze the risk profile of this Non-Performing Asset (NPA).
+    Type: ${type}
+    Outstanding Amount: ${amount}
+    Description: ${description}
+
+    Based on the description (condition, location hints, asset type), estimate:
+    1. Risk Score (0-100, where 100 is high risk/hard to recover).
+    2. Recovery Probability (0-100).
+  `;
+
+  try {
+    const response = await client.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            riskScore: { type: Type.NUMBER },
+            recoveryProbability: { type: Type.NUMBER }
+          }
+        }
+      }
+    });
+    return JSON.parse(response.text || '{"riskScore": 50, "recoveryProbability": 50}');
+  } catch (error) {
+    console.error("Risk analysis failed", error);
+    return { riskScore: 50, recoveryProbability: 50 };
   }
 };
