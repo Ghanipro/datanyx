@@ -244,7 +244,7 @@ function App() {
                <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
                  <Building2 className="w-5 h-5 text-white" />
                </div>
-               RecoverAI
+               FortiFi
              </div>
           ) : (
             <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center mx-auto">
