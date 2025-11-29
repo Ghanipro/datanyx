@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { Building2, Lock, Mail, ArrowRight, User as UserIcon } from 'lucide-react';
+import { Building2, Lock, Mail, ArrowRight, User as UserIcon, Gavel } from 'lucide-react';
 import { loginUser, registerUser, forgotPassword } from '../services/apiClient';
 import { User } from '../types';
 
@@ -51,7 +52,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl mb-4 shadow-lg">
             <Building2 className="w-6 h-6 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-white">RecoverAI</h2>
+          <h2 className="text-2xl font-bold text-white">FortiFi</h2>
           <p className="text-slate-400 mt-2 text-sm">Bank Asset Recovery Platform</p>
         </div>
         
@@ -149,7 +150,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm">
+          <div className="mt-6 text-center text-sm space-y-3">
             {mode === 'login' && (
               <button onClick={() => { setMode('forgot'); setError(''); setSuccessMsg(''); }} className="text-blue-600 hover:underline">Forgot Password?</button>
             )}
@@ -159,6 +160,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             {mode === 'signup' && (
               <button onClick={() => { setMode('login'); setError(''); setSuccessMsg(''); }} className="text-slate-500 hover:text-slate-700">Already have an account? Login</button>
             )}
+
+            <div className="pt-4 border-t border-slate-100">
+               <a href="/bid" className="inline-flex items-center text-slate-600 hover:text-blue-700 font-medium">
+                  <Gavel className="w-4 h-4 mr-2" /> Go to Bidder Portal
+               </a>
+            </div>
           </div>
         </div>
       </div>

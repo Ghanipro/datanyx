@@ -11,9 +11,12 @@ import { Login } from './components/Login';
 import { Settings } from './components/Settings';
 import { BidderPortal } from './components/BidderPortal';
 import { BidderManagement } from './components/BidderManagement';
+import { AuctionList } from './components/AuctionList';
+import { Chatbot } from './components/Chatbot';
+import { BidderLanding } from './components/BidderLanding';
 import { Asset, User, Notification, AssetType, AssetStatus } from './types';
 import { fetchAssets, createAsset, fetchNotifications } from './services/apiClient';
-import { analyzeAssetRisk } from './services/geminiService';
+import { analyzeAssetRisk, generateAssetSummary } from './services/geminiService';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -22,6 +25,7 @@ function App() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
   
   // Modals & Popups
   const [showAddAssetModal, setShowAddAssetModal] = useState(false);
@@ -30,7 +34,52 @@ function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
 
-  // Auth Effect
+  // Routing State
+  const isBidderRoute = window.location.pathname.startsWith('/bid');
+
+  // --- PERSIST LOGIN & SETTINGS ---
+  useEffect(() => {
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+      setDarkMode(true);
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  const handleLogin = (u: User) => {
+    setUser(u);
+    localStorage.setItem('user', JSON.stringify(u));
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('user');
+    window.location.href = isBidderRoute ? '/bid' : '/';
+  };
+
+  const toggleDarkMode = () => {
+    const newMode = !darkMode;
+    setDarkMode(newMode);
+    localStorage.setItem('theme', newMode ? 'dark' : 'light');
+    if (newMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  const handleUpdateUser = (updatedUser: User) => {
+    const newUser = { ...user, ...updatedUser };
+    setUser(newUser);
+    localStorage.setItem('user', JSON.stringify(newUser));
+  };
+
   useEffect(() => {
     if (user && user.role === 'Recovery Officer') {
       loadAssets();
@@ -42,9 +91,10 @@ function App() {
     setIsLoading(true);
     try {
       const data = await fetchAssets();
-      setAssets(data);
+      setAssets(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Failed to load assets", error);
+      setAssets([]);
     } finally {
       setIsLoading(false);
     }
@@ -65,33 +115,39 @@ function App() {
     setSelectedAsset(updatedAsset);
   };
 
-  // Add Asset Form Handler
   const handleAddAsset = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmittingAsset(true);
     const form = e.currentTarget;
     const formData = new FormData(form);
     
-    // 1. Get description and values for AI analysis
     const description = formData.get('description') as string;
     const amount = Number(formData.get('amount'));
     const type = formData.get('type') as string;
 
-    // 2. Perform AI Risk Analysis
+    const needsArea = [AssetType.RESIDENTIAL, AssetType.COMMERCIAL, AssetType.INDUSTRIAL, AssetType.LAND];
+    if (needsArea.includes(type as AssetType) && !formData.get('areaSqFt')) {
+      alert(`Area in Sq Ft is mandatory for ${type}`);
+      setIsSubmittingAsset(false);
+      return;
+    }
+
     setAiAnalyzing(true);
     let riskData = { riskScore: 50, recoveryProbability: 50 };
+    let summaryData = { summary: description, keywords: [] };
+    
     try {
-      riskData = await analyzeAssetRisk(description, amount, type);
+      const [rData, sData] = await Promise.all([
+        analyzeAssetRisk(description, amount, type),
+        generateAssetSummary(description, type)
+      ]);
+      riskData = rData;
+      summaryData = sData;
     } catch (e) {
       console.error("AI Analysis failed, using defaults");
     }
     setAiAnalyzing(false);
 
-    // 3. Prepare Payload (using FormData for file upload)
-    // We already have the form data, we just need to append the AI fields and computed fields
-    // Note: To send strict JSON types alongside File in standard FormData, typical approach is appending fields
-    
-    // Required fields mapping
     formData.append('outstandingAmount', amount.toString());
     formData.append('loanAccountNumber', formData.get('loanAccount') as string);
     formData.append('riskScore', riskData.riskScore.toString());
@@ -100,29 +156,41 @@ function App() {
     formData.append('status', AssetStatus.NEW);
     formData.append('coordinates[lat]', '20.5937');
     formData.append('coordinates[lng]', '78.9629');
-
-    // The 'image' file input is already in formData as 'image'
+    
+    formData.append('summary', summaryData.summary);
+    formData.append('keywords', summaryData.keywords.join(', '));
 
     try {
       const created = await createAsset(formData);
       setAssets([...assets, created]);
       setShowAddAssetModal(false);
       loadNotifications();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Failed to create asset.");
+      alert(error.message || "Failed to create asset.");
     } finally {
       setIsSubmittingAsset(false);
     }
   };
 
-  if (!user) {
-    return <Login onLogin={(u) => setUser(u)} />;
+  const [selectedType, setSelectedType] = useState<string>(AssetType.RESIDENTIAL);
+
+  // --- BIDDER ROUTE HANDLER ---
+  if (isBidderRoute) {
+      if (user && user.role === 'Bidder') {
+          return <BidderPortal user={user} onLogout={handleLogout} />;
+      }
+      return <BidderLanding onLogin={handleLogin} />;
   }
 
-  // --- BIDDER PORTAL VIEW ---
+  // --- MAIN APP HANDLER ---
+  if (!user) {
+    return <Login onLogin={handleLogin} />;
+  }
+
+  // If a Bidder accidentally logs in at main URL, redirect or show portal
   if (user.role === 'Bidder') {
-    return <BidderPortal user={user} onLogout={() => setUser(null)} />;
+    return <BidderPortal user={user} onLogout={handleLogout} />;
   }
 
   // --- RECOVERY OFFICER VIEW ---
@@ -141,17 +209,18 @@ function App() {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden animate-fade-in">
+    <div className="flex h-screen overflow-hidden animate-fade-in">
+      <div className="flex h-full w-full bg-slate-50 dark:bg-slate-900 transition-colors">
       
       {/* Sidebar */}
-      <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-white transition-all duration-300 flex-shrink-0 flex flex-col`}>
+      <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-white transition-all duration-300 flex-shrink-0 flex flex-col z-20`}>
         <div className="p-6 flex items-center justify-between">
           {isSidebarOpen ? (
              <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
                <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
                  <Building2 className="w-5 h-5 text-white" />
                </div>
-               RecoverAI
+               FortiFi
              </div>
           ) : (
             <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center mx-auto">
@@ -179,7 +248,7 @@ function App() {
           </button>
           
           <button 
-            onClick={() => setUser(null)}
+            onClick={handleLogout}
             className="flex items-center text-slate-400 hover:text-red-400 w-full px-4 py-2 mt-2 transition-colors"
           >
             <LogOut className="w-5 h-5 mr-3" />
@@ -192,11 +261,11 @@ function App() {
       <div className="flex-1 flex flex-col overflow-hidden relative">
         
         {/* Top Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-10">
+        <header className="h-16 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-6 shadow-sm z-10 transition-colors">
           <div className="flex items-center">
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 mr-4"
+              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 mr-4"
             >
               <Menu className="w-5 h-5" />
             </button>
@@ -205,7 +274,7 @@ function App() {
               <input 
                 type="text" 
                 placeholder="Global search..." 
-                className="pl-10 pr-4 py-2 bg-slate-100 border-none rounded-full text-sm w-64 focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                className="pl-10 pr-4 py-2 bg-slate-100 dark:bg-slate-700 border-none rounded-full text-sm w-64 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-600 dark:text-white transition-all"
               />
             </div>
           </div>
@@ -215,28 +284,28 @@ function App() {
             <div className="relative">
               <button 
                 onClick={() => setShowNotifications(!showNotifications)}
-                className="relative p-2 rounded-full hover:bg-slate-100 text-slate-600"
+                className="relative p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300"
               >
                 <Bell className="w-5 h-5" />
                 {notifications.some(n => !n.isRead) && (
-                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-800"></span>
                 )}
               </button>
               
               {showNotifications && (
-                <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50 animate-fade-in">
-                  <div className="p-3 border-b border-slate-100 font-semibold text-slate-800 bg-slate-50">Notifications</div>
+                <div className="absolute right-0 top-12 w-80 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-50 animate-fade-in">
+                  <div className="p-3 border-b border-slate-100 dark:border-slate-700 font-semibold text-slate-800 dark:text-white bg-slate-50 dark:bg-slate-900">Notifications</div>
                   <div className="max-h-80 overflow-y-auto">
                     {notifications.length === 0 ? (
-                      <p className="p-4 text-center text-sm text-slate-500">No new notifications</p>
+                      <p className="p-4 text-center text-sm text-slate-500 dark:text-slate-400">No new notifications</p>
                     ) : (
                       notifications.map(n => (
-                        <div key={n.id} className={`p-3 border-b border-slate-50 hover:bg-slate-50 cursor-pointer ${!n.isRead ? 'bg-blue-50/50' : ''}`}>
+                        <div key={n.id} className={`p-3 border-b border-slate-50 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer ${!n.isRead ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''}`}>
                           <div className="flex justify-between items-start">
-                             <p className="text-sm font-medium text-slate-800">{n.title}</p>
+                             <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{n.title}</p>
                              <span className={`w-2 h-2 rounded-full mt-1.5 ${n.type === 'success' ? 'bg-green-500' : 'bg-blue-500'}`}></span>
                           </div>
-                          <p className="text-xs text-slate-500 mt-1">{n.message}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{n.message}</p>
                           <p className="text-xs text-slate-400 mt-1 text-right">{new Date(n.createdAt).toLocaleDateString()}</p>
                         </div>
                       ))
@@ -246,13 +315,13 @@ function App() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 pl-4 border-l border-slate-200">
+            <div className="flex items-center gap-2 pl-4 border-l border-slate-200 dark:border-slate-700">
               <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-xs uppercase shadow-sm">
                 {user.name.slice(0, 2)}
               </div>
               <div className="hidden md:block">
-                <p className="text-sm font-semibold text-slate-800">{user.name}</p>
-                <p className="text-xs text-slate-500">{user.role}</p>
+                <p className="text-sm font-semibold text-slate-800 dark:text-white">{user.name}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{user.role}</p>
               </div>
               <ChevronDown className="w-4 h-4 text-slate-400" />
             </div>
@@ -260,7 +329,7 @@ function App() {
         </header>
 
         {/* Dynamic View Area */}
-        <main className="flex-1 overflow-auto bg-slate-50">
+        <main className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-900 transition-colors">
           {selectedAsset ? (
             <AssetDetail 
               asset={selectedAsset} 
@@ -279,8 +348,8 @@ function App() {
                   {activeModule === 'dashboard' && (
                     <>
                       <div className="mb-8">
-                        <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-                        <p className="text-slate-500">Overview of recovery performance and risks</p>
+                        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Dashboard</h1>
+                        <p className="text-slate-500 dark:text-slate-400">Overview of recovery performance and risks</p>
                       </div>
                       <Dashboard assets={assets} />
                     </>
@@ -290,12 +359,12 @@ function App() {
                     <>
                       <div className="mb-8 flex justify-between items-end">
                         <div>
-                          <h1 className="text-2xl font-bold text-slate-800">Asset Management</h1>
-                          <p className="text-slate-500">Manage and track non-performing assets</p>
+                          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Asset Management</h1>
+                          <p className="text-slate-500 dark:text-slate-400">Manage and track non-performing assets</p>
                         </div>
                         <button 
                           onClick={() => setShowAddAssetModal(true)}
-                          className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm"
+                          className="bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center shadow-sm"
                         >
                           <Plus className="w-4 h-4 mr-2" /> Add New Asset
                         </button>
@@ -306,67 +375,88 @@ function App() {
 
                   {/* Add Asset Modal */}
                   {showAddAssetModal && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
-                      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
-                          <h2 className="text-xl font-bold text-slate-800">Add New Asset</h2>
-                          <button onClick={() => setShowAddAssetModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-500" /></button>
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in backdrop-blur-sm">
+                      <div className="bg-white dark:bg-slate-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl transition-colors">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center sticky top-0 bg-white dark:bg-slate-800 z-10">
+                          <h2 className="text-xl font-bold text-slate-800 dark:text-white">Add New Asset</h2>
+                          <button onClick={() => setShowAddAssetModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"><X className="w-5 h-5 text-slate-500" /></button>
                         </div>
                         <form onSubmit={handleAddAsset} className="p-6 space-y-4">
                           <div className="grid grid-cols-2 gap-4">
                              <div>
-                               <label className="block text-sm font-medium text-slate-700 mb-1">Borrower Name</label>
-                               <input name="borrowerName" required type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. Acme Corp" />
+                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Borrower Name</label>
+                               <input name="borrowerName" required type="text" className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-white" placeholder="e.g. Acme Corp" />
                              </div>
                              <div>
-                               <label className="block text-sm font-medium text-slate-700 mb-1">Loan Account No.</label>
-                               <input name="loanAccount" required type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="LN-XXXX-XXXX" />
+                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Loan Account No.</label>
+                               <input name="loanAccount" required type="text" className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-white" placeholder="LN-XXXX-XXXX" />
                              </div>
                           </div>
                           <div className="grid grid-cols-2 gap-4">
                              <div>
-                               <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                               <select name="type" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Type</label>
+                               <select 
+                                 name="type" 
+                                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-white"
+                                 onChange={(e) => setSelectedType(e.target.value)}
+                                 value={selectedType}
+                               >
                                  {Object.values(AssetType).map(t => <option key={t} value={t}>{t}</option>)}
                                </select>
                              </div>
                              <div>
-                               <label className="block text-sm font-medium text-slate-700 mb-1">Outstanding Amount (₹)</label>
-                               <input name="amount" required type="number" min="0" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0.00" />
+                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Outstanding Amount (₹)</label>
+                               <input name="amount" required type="number" min="0" className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-white" placeholder="0.00" />
                              </div>
                           </div>
+
+                           {(selectedType === AssetType.RESIDENTIAL || selectedType === AssetType.COMMERCIAL || selectedType === AssetType.INDUSTRIAL || selectedType === AssetType.LAND) && (
+                             <div>
+                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Area (Sq Ft) <span className="text-red-500">*</span></label>
+                               <input name="areaSqFt" required type="number" min="0" className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-white" placeholder="e.g. 1500" />
+                             </div>
+                           )}
+
                           <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Property Address</label>
-                            <input name="address" required type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Street Address" />
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Property Address</label>
+                            <input name="address" required type="text" className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-white" placeholder="Street Address" />
                           </div>
                           <div className="grid grid-cols-2 gap-4">
                             <div>
-                               <label className="block text-sm font-medium text-slate-700 mb-1">City</label>
-                               <input name="city" required type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="City" />
+                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">City</label>
+                               <input name="city" required type="text" className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-white" placeholder="City" />
                              </div>
                              <div>
-                               <label className="block text-sm font-medium text-slate-700 mb-1">Market Value (Est. ₹)</label>
-                               <input name="marketValue" required type="number" min="0" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0.00" />
+                               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Market Value (Est. ₹)</label>
+                               <input name="marketValue" required type="number" min="0" className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-white" placeholder="0.00" />
                              </div>
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Property Image</label>
-                            <input type="file" name="image" accept="image/*" className="w-full border border-slate-300 rounded-lg p-2 text-sm" required />
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                             <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Property Image</label>
+                                <input type="file" name="image" accept="image/*" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm text-slate-500 dark:text-slate-400" required />
+                             </div>
+                             <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Initial Document (PDF/Img) <span className="text-red-500">*</span></label>
+                                <input type="file" name="document" accept=".pdf,.png,.jpg" className="w-full border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm text-slate-500 dark:text-slate-400" required />
+                             </div>
                           </div>
+
                           <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Description (used for AI Risk Score)</label>
-                            <textarea name="description" required className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 h-24 outline-none resize-none" placeholder="Detailed description of the asset..."></textarea>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Description (used for AI Risk Score & Summary)</label>
+                            <textarea name="description" required className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 h-24 outline-none resize-none bg-white dark:bg-slate-700 dark:text-white" placeholder="Detailed description of the asset..."></textarea>
                           </div>
                           
-                          <div className="pt-4 flex justify-end gap-3 border-t border-slate-100 mt-6">
-                            <button type="button" onClick={() => setShowAddAssetModal(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
+                          <div className="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700 mt-6">
+                            <button type="button" onClick={() => setShowAddAssetModal(false)} className="px-4 py-2 text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">Cancel</button>
                             <button 
                               type="submit" 
                               disabled={isSubmittingAsset || aiAnalyzing}
                               className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center"
                             >
                               {(isSubmittingAsset || aiAnalyzing) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                              {aiAnalyzing ? 'Analyzing Risk...' : isSubmittingAsset ? 'Creating...' : 'Create Asset'}
+                              {aiAnalyzing ? 'Processing AI...' : isSubmittingAsset ? 'Creating...' : 'Create Asset'}
                             </button>
                           </div>
                         </form>
@@ -375,15 +465,7 @@ function App() {
                   )}
 
                   {activeModule === 'auctions' && (
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200">
-                      <div className="p-6 border-b border-slate-100">
-                        <h2 className="text-xl font-bold text-slate-800">Auction Overview</h2>
-                        <p className="text-slate-500">Live auctions and bidding activity</p>
-                      </div>
-                      <div className="p-6">
-                        <p className="text-slate-500">As a Recovery Officer, you can manage auctions from the individual Asset detail pages. Use the "Schedule Auction" button in the Asset view.</p>
-                      </div>
-                    </div>
+                    <AuctionList />
                   )}
 
                   {activeModule === 'bidders' && (
@@ -391,13 +473,18 @@ function App() {
                   )}
 
                   {activeModule === 'settings' && (
-                    <Settings />
+                    <Settings user={user} darkMode={darkMode} toggleDarkMode={toggleDarkMode} onUpdateUser={handleUpdateUser} />
                   )}
                 </>
               )}
             </div>
           )}
         </main>
+        
+        {/* Chatbot - Visible for Recovery Officers */}
+        <Chatbot />
+
+      </div>
       </div>
     </div>
   );

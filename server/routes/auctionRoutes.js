@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const Auction = require('../models/Auction');
 const Asset = require('../models/Asset');
+const Bidder = require('../models/Bidder');
 
 // POST Schedule Auction
 router.post('/schedule', async (req, res) => {
@@ -22,8 +23,6 @@ router.post('/schedule', async (req, res) => {
     });
 
     await auction.save();
-
-    // Update Asset Status
     await Asset.findByIdAndUpdate(assetId, { status: 'Auction Scheduled' });
 
     res.status(201).json(auction);
@@ -32,28 +31,37 @@ router.post('/schedule', async (req, res) => {
   }
 });
 
-// GET Live Auctions
+// GET All Auctions (Live & Ended)
 router.get('/live', async (req, res) => {
   try {
-    // Populate asset details for the bidder card
-    const auctions = await Auction.find({ status: 'live' }).populate('assetId', 'borrowerName city imageUrl');
+    // Populate asset details
+    const auctions = await Auction.find().populate('assetId', 'borrowerName city imageUrl').sort({ startDate: -1 });
     
-    // Transform to include assetSnapshot equivalent
-    const formatted = auctions.map(a => ({
-      id: a._id,
-      assetId: a.assetId._id,
-      startDate: a.startDate,
-      endDate: a.endDate,
-      reservePrice: a.reservePrice,
-      currentBid: a.currentBid,
-      status: a.status,
-      bids: a.bids,
-      assetSnapshot: {
-        borrowerName: a.assetId.borrowerName,
-        city: a.assetId.city,
-        imageUrl: a.assetId.imageUrl
+    const formatted = auctions.map(a => {
+      // Check if expired but still marked live
+      let status = a.status;
+      if (status === 'live' && new Date() > new Date(a.endDate)) {
+        status = 'ended';
       }
-    }));
+
+      return {
+        id: a._id,
+        assetId: a.assetId ? a.assetId._id : null,
+        startDate: a.startDate,
+        endDate: a.endDate,
+        reservePrice: a.reservePrice,
+        currentBid: a.currentBid,
+        status: status,
+        bids: a.bids,
+        winner: a.winner,
+        winningBid: a.winningBid,
+        assetSnapshot: a.assetId ? {
+          borrowerName: a.assetId.borrowerName,
+          city: a.assetId.city,
+          imageUrl: a.assetId.imageUrl
+        } : null
+      };
+    });
 
     res.json(formatted);
   } catch (err) {
@@ -64,17 +72,53 @@ router.get('/live', async (req, res) => {
 // POST Place Bid
 router.post('/:id/bid', async (req, res) => {
   try {
-    const { bidderName, amount } = req.body;
+    const { bidderName, amount } = req.body; // In real app, get bidderId from token
     const auction = await Auction.findById(req.params.id);
 
     if (!auction) return res.status(404).json({ message: "Auction not found" });
-    if (auction.status !== 'live') return res.status(400).json({ message: "Auction not active" });
+    
+    if (new Date() > new Date(auction.endDate)) {
+        auction.status = 'ended';
+        await auction.save();
+        return res.status(400).json({ message: "Auction has ended" });
+    }
+
     if (amount <= auction.currentBid) return res.status(400).json({ message: "Bid must be higher than current bid" });
 
-    auction.bids.push({ bidderName, amount });
+    // Find bidder (using name for now, simpler for this demo)
+    const bidder = await Bidder.findOne({ name: bidderName });
+    
+    auction.bids.push({ 
+        bidderId: bidder ? bidder._id : null, 
+        bidderName, 
+        amount 
+    });
     auction.currentBid = amount;
     
     await auction.save();
+    res.json(auction);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST Select Winner
+router.post('/:id/select-winner', async (req, res) => {
+  try {
+    const { bidId } = req.body; // The specific bid selected
+    const auction = await Auction.findById(req.params.id);
+    if (!auction) return res.status(404).json({ message: "Auction not found" });
+
+    const selectedBid = auction.bids.find(b => b._id.toString() === bidId);
+    if (!selectedBid) return res.status(404).json({ message: "Bid not found" });
+
+    auction.winner = selectedBid.bidderId;
+    auction.winningBid = selectedBid.amount;
+    auction.status = 'closed';
+    await auction.save();
+
+    await Asset.findByIdAndUpdate(auction.assetId, { status: 'Sold' });
+
     res.json(auction);
   } catch (err) {
     res.status(500).json({ message: err.message });

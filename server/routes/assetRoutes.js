@@ -37,12 +37,14 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST Create Asset (With Image)
-router.post('/', upload.single('image'), async (req, res) => {
+// POST Create Asset (With Image AND Mandatory Document)
+const cpUpload = upload.fields([{ name: 'image', maxCount: 1 }, { name: 'document', maxCount: 1 }]);
+
+router.post('/', cpUpload, async (req, res) => {
   try {
     const assetData = req.body;
     
-    // Process nested coordinates if sent as flat fields or string
+    // Process nested coordinates
     if (assetData['coordinates[lat]']) {
       assetData.coordinates = {
         lat: parseFloat(assetData['coordinates[lat]']),
@@ -50,14 +52,44 @@ router.post('/', upload.single('image'), async (req, res) => {
       };
     }
 
-    if (req.file) {
-      assetData.imageUrl = req.file.path.replace(/\\/g, "/"); // normalize path
+    // Validate Area SqFt for specific types
+    const needsArea = ['Residential', 'Commercial', 'Industrial', 'Land'];
+    if (needsArea.includes(assetData.type) && !assetData.areaSqFt) {
+      return res.status(400).json({ message: `Area in Sq Ft is mandatory for ${assetData.type}` });
+    }
+
+    // Process Image
+    if (req.files['image']) {
+      assetData.imageUrl = req.files['image'][0].path.replace(/\\/g, "/");
+    }
+
+    // Process Mandatory Document
+    const docs = [];
+    if (req.files['document']) {
+      const docFile = req.files['document'][0];
+      docs.push({
+        id: Date.now().toString(),
+        name: docFile.originalname,
+        type: 'Initial Disclosure',
+        uploadDate: new Date().toISOString().split('T')[0],
+        status: 'verified',
+        filePath: docFile.path.replace(/\\/g, "/")
+      });
+    } else {
+      return res.status(400).json({ message: "Mandatory document is missing" });
+    }
+    assetData.documents = docs;
+
+    // Process Keywords (sent as string from frontend)
+    if (typeof assetData.keywords === 'string') {
+        assetData.keywords = assetData.keywords.split(',').map(k => k.trim());
     }
 
     const asset = new Asset(assetData);
     const newAsset = await asset.save();
     res.status(201).json(newAsset);
   } catch (err) {
+    console.error(err);
     res.status(400).json({ message: err.message });
   }
 });

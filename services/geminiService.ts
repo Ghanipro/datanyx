@@ -165,3 +165,35 @@ export const analyzeAssetRisk = async (description: string, amount: number, type
     return { riskScore: 50, recoveryProbability: 50 };
   }
 };
+
+export const generateAssetSummary = async (description: string, type: string) => {
+    const client = getClient();
+    if (!client) return { summary: description, keywords: [] };
+  
+    const prompt = `
+      Summarize the following asset description into a concise paragraph (max 200 words) and extract 5-7 distinct keywords for indexing.
+      Asset Type: ${type}
+      Description: ${description}
+    `;
+  
+    try {
+      const response = await client.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              summary: { type: Type.STRING },
+              keywords: { type: Type.ARRAY, items: { type: Type.STRING } }
+            }
+          }
+        }
+      });
+      return JSON.parse(response.text || '{"summary": "", "keywords": []}');
+    } catch (error) {
+      console.error("Summary generation failed", error);
+      return { summary: description.slice(0, 100) + '...', keywords: [] };
+    }
+  };

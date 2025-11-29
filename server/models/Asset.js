@@ -43,6 +43,7 @@ const AssetSchema = new mongoose.Schema({
     lat: Number,
     lng: Number
   },
+  areaSqFt: { type: Number }, // Mandatory for real estate
   outstandingAmount: Number,
   reservePrice: Number,
   marketValue: Number,
@@ -56,7 +57,9 @@ const AssetSchema = new mongoose.Schema({
   riskScore: { type: Number, default: 50 },
   recoveryProbability: { type: Number, default: 50 },
   imageUrl: String,
-  description: String
+  description: String,
+  summary: String,
+  keywords: [String]
 }, { 
   timestamps: true,
   toJSON: {

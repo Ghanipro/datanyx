@@ -2,11 +2,12 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
+const Bidder = require('../models/Bidder');
 const Notification = require('../models/Notification');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
-// REGISTER
+// REGISTER (Internal/Officer use or standard signup)
 router.post('/signup', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -19,20 +20,10 @@ router.post('/signup', async (req, res) => {
       email,
       password: hashedPassword,
       role: 'Recovery Officer',
-      branch: 'Head Office' // Default branch
+      branch: 'Head Office' 
     });
     await user.save();
 
-    // Create a Welcome Notification
-    await Notification.create({
-      userId: user._id,
-      title: 'Welcome to RecoverAI',
-      message: `Hello ${name}, your account has been created successfully. You can now start managing assets.`,
-      type: 'success',
-      isRead: false
-    });
-
-    // Generate Token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
     res.status(201).json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role, branch: user.branch } });
   } catch (err) {
@@ -49,6 +40,17 @@ router.post('/login', async (req, res) => {
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+
+    // CHECK BIDDER STATUS
+    if (user.role === 'Bidder') {
+        const bidder = await Bidder.findOne({ userId: user._id });
+        if (bidder && bidder.kycStatus === 'pending') {
+            return res.status(403).json({ message: "Your account is pending approval by the Recovery Officer." });
+        }
+        if (bidder && bidder.kycStatus === 'rejected') {
+            return res.status(403).json({ message: "Your account application has been rejected." });
+        }
+    }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
     
@@ -67,29 +69,43 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// FORGOT PASSWORD (SIMULATED TEMP PASSWORD)
+// UPDATE PROFILE
+router.patch('/:id', async (req, res) => {
+  try {
+    const { name, email, branch } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.params.id, 
+      { name, email, branch }, 
+      { new: true }
+    );
+    res.json({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      branch: user.branch
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// FORGOT PASSWORD
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Generate a temporary password
     const tempPassword = Math.random().toString(36).slice(-8);
     const hashedPassword = await bcrypt.hash(tempPassword, 10);
     
     user.password = hashedPassword;
     await user.save();
 
-    // LOGGING FOR DEMO PURPOSES
-    console.log("=========================================");
-    console.log(`[EMAIL SIMULATION] Forgot Password Request`);
-    console.log(`To: ${email}`);
-    console.log(`Subject: Password Reset`);
-    console.log(`Body: Your temporary password is: ${tempPassword}`);
-    console.log("=========================================");
+    console.log(`[EMAIL SIMULATION] Forgot Password for ${email}: ${tempPassword}`);
 
-    res.json({ message: `A temporary password has been sent to ${email}. (Check Server Console)` });
+    res.json({ message: `A temporary password has been sent to ${email}.` });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

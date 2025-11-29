@@ -43,6 +43,7 @@ export interface Document {
   uploadDate: string;
   extractedData?: Record<string, any>;
   status: 'pending' | 'processing' | 'verified' | 'flagged';
+  filePath?: string;
 }
 
 export interface LegalEvent {
@@ -68,13 +69,18 @@ export interface Asset {
   status: AssetStatus;
   documents: Document[];
   timeline: LegalEvent[];
-  riskScore: number; // 0-100
-  recoveryProbability: number; // 0-100
+  riskScore: number;
+  recoveryProbability: number;
   imageUrl: string;
   description: string;
+  areaSqFt?: number;
+  summary?: string;
+  keywords?: string[];
 }
 
 export interface Bid {
+  _id?: string;
+  bidderId?: string;
   bidderName: string;
   amount: number;
   timestamp: string;
@@ -92,9 +98,10 @@ export interface Auction {
   endDate: string;
   reservePrice: number;
   currentBid: number;
-  status: 'upcoming' | 'live' | 'ended';
+  status: 'upcoming' | 'live' | 'ended' | 'closed';
   bids: Bid[];
-  timeLeft?: string; // Calculated on frontend
+  winner?: string;
+  winningBid?: number;
 }
 
 export interface Bidder {
@@ -102,5 +109,7 @@ export interface Bidder {
   name: string;
   email: string;
   phone: string;
+  aadharNumber?: string;
+  panUrl?: string;
   kycStatus: 'verified' | 'pending' | 'rejected';
 }

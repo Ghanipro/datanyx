@@ -59,7 +59,7 @@ export const BidderPortal: React.FC<BidderPortalProps> = ({ user, onLogout }) =>
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Gavel className="w-6 h-6 text-yellow-500" />
-            <span className="font-bold text-xl tracking-tight">RecoverAI Auctions</span>
+            <span className="font-bold text-xl tracking-tight">FortiFi Auctions</span>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right hidden md:block">

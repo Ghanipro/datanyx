@@ -2,8 +2,8 @@
 import React, { useState } from 'react';
 import { Asset, Document, LegalEvent, AssetStatus } from '../types';
 import { 
-  ArrowLeft, Upload, FileText, CheckCircle, AlertTriangle, 
-  Gavel, Clock, MapPin, Download, Sparkles, Send, AlertCircle 
+  ArrowLeft, Upload, FileText, AlertTriangle, 
+  Gavel, Clock, MapPin, Sparkles, Send, AlertCircle 
 } from 'lucide-react';
 import { extractDocumentDetails, predictRecoveryValue, generateLegalNotice } from '../services/geminiService';
 import { addLegalEvent, scheduleAuction } from '../services/apiClient';
@@ -24,6 +24,16 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
   const [aiPrediction, setAiPrediction] = useState<any>(null);
   const [generatedNotice, setGeneratedNotice] = useState<string | null>(null);
   const [auctionScheduling, setAuctionScheduling] = useState(false);
+
+  const getImageUrl = (url: string) => {
+    if (!url) return 'https://via.placeholder.com/800x400?text=No+Image';
+    if (url.startsWith('http')) return url;
+    return `http://127.0.0.1:5000/${url.replace(/\\/g, '/')}`;
+  };
+
+  // Safe access to arrays
+  const documents = asset.documents || [];
+  const timeline = asset.timeline || [];
 
   // Handle Document Upload & AI Extraction
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,7 +59,7 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
         // Optimistic Update
         onUpdateAsset({
           ...asset,
-          documents: [...asset.documents, newDoc]
+          documents: [...documents, newDoc]
         });
         setUploading(false);
       };
@@ -103,7 +113,7 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
       const createdEvent = await addLegalEvent(asset.id, newEvent);
       onUpdateAsset({
         ...asset,
-        timeline: [...asset.timeline, createdEvent],
+        timeline: [...timeline, createdEvent],
         status: AssetStatus.NOTICE_SENT
       });
       setGeneratedNotice(null);
@@ -128,7 +138,7 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
   };
 
   return (
-    <div className="bg-white min-h-screen pb-12 animate-fade-in">
+    <div className="bg-white dark:bg-slate-900 min-h-screen pb-12 animate-fade-in transition-colors">
       {/* Header */}
       <div className="bg-slate-900 text-white p-6 sticky top-0 z-10 shadow-md">
         <div className="max-w-7xl mx-auto">
@@ -140,7 +150,7 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
           </button>
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
-              <h1 className="text-2xl font-bold">{asset.borrowerName}</h1>
+              <h1 className="text-2xl font-bold text-white">{asset.borrowerName}</h1>
               <p className="text-slate-400 text-sm flex items-center mt-1">
                 <MapPin className="w-3 h-3 mr-1" /> {asset.address}, {asset.city}
               </p>
@@ -170,8 +180,8 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
               onClick={() => setActiveTab(tab as Tab)}
               className={`w-full text-left px-4 py-3 rounded-lg font-medium transition-colors flex items-center capitalize ${
                 activeTab === tab 
-                  ? 'bg-blue-50 text-blue-700 border border-blue-100' 
-                  : 'text-slate-600 hover:bg-slate-50'
+                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-blue-800' 
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
               }`}
             >
               {tab === 'overview' && <FileText className="w-4 h-4 mr-3" />}
@@ -190,39 +200,39 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
           {/* OVERVIEW TAB */}
           {activeTab === 'overview' && (
             <div className="space-y-6 animate-fade-in">
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <img 
-                   src={asset.imageUrl.startsWith('http') ? asset.imageUrl : `http://127.0.0.1:5000/${asset.imageUrl}`} 
+                   src={getImageUrl(asset.imageUrl)}
                    alt="Asset" 
                    className="w-full h-64 object-cover"
                    onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/800x400?text=No+Image'; }}
                 />
                 <div className="p-6">
-                  <h3 className="text-lg font-bold text-slate-800 mb-4">Property Description</h3>
-                  <p className="text-slate-600 leading-relaxed">{asset.description}</p>
+                  <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">Property Description</h3>
+                  <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{asset.description}</p>
                 </div>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                  <p className="text-sm text-slate-500 mb-1">Outstanding</p>
-                  <p className="text-xl font-bold text-slate-900">₹{asset.outstandingAmount.toLocaleString()}</p>
+                <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg border border-slate-100 dark:border-slate-700">
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Outstanding</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-white">₹{asset.outstandingAmount.toLocaleString()}</p>
                 </div>
-                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                  <p className="text-sm text-slate-500 mb-1">Market Value</p>
-                  <p className="text-xl font-bold text-slate-900">₹{asset.marketValue.toLocaleString()}</p>
+                <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg border border-slate-100 dark:border-slate-700">
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Market Value</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-white">₹{asset.marketValue.toLocaleString()}</p>
                 </div>
-                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                  <p className="text-sm text-slate-500 mb-1">Reserve Price</p>
-                  <p className="text-xl font-bold text-slate-900">₹{asset.reservePrice.toLocaleString()}</p>
+                <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg border border-slate-100 dark:border-slate-700">
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Reserve Price</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-white">₹{asset.reservePrice.toLocaleString()}</p>
                 </div>
               </div>
 
-               <div className="flex items-center p-4 bg-orange-50 rounded-lg border border-orange-100">
+               <div className="flex items-center p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-800">
                 <AlertCircle className={`w-5 h-5 mr-3 ${asset.riskScore > 70 ? 'text-red-500' : 'text-orange-500'}`} />
                 <div>
-                  <p className="font-semibold text-slate-800">Risk Score: {asset.riskScore}/100</p>
-                  <p className="text-sm text-slate-600">Recovery Probability: {asset.recoveryProbability}%</p>
+                  <p className="font-semibold text-slate-800 dark:text-white">Risk Score: {asset.riskScore}/100</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">Recovery Probability: {asset.recoveryProbability}%</p>
                 </div>
               </div>
             </div>
@@ -232,7 +242,7 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
           {activeTab === 'documents' && (
             <div className="space-y-6 animate-fade-in">
               <div className="flex justify-between items-center">
-                <h3 className="text-xl font-bold text-slate-800">Legal Documents</h3>
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white">Legal Documents</h3>
                 <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg cursor-pointer flex items-center shadow-sm transition-colors">
                   <Upload className="w-4 h-4 mr-2" />
                   {uploading ? 'Processing...' : 'Upload Document'}
@@ -240,21 +250,21 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
                 </label>
               </div>
 
-              {asset.documents.length === 0 ? (
-                <div className="text-center py-12 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
-                  <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                  <p className="text-slate-500">No documents uploaded yet.</p>
+              {documents.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+                  <FileText className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                  <p className="text-slate-500 dark:text-slate-400">No documents uploaded yet.</p>
                 </div>
               ) : (
                 <div className="grid gap-4">
-                  {asset.documents.map(doc => (
-                    <div key={doc.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4">
+                  {documents.map(doc => (
+                    <div key={doc.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row gap-4">
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-semibold text-slate-800 flex items-center">
+                          <h4 className="font-semibold text-slate-800 dark:text-white flex items-center">
                             {doc.name}
                             <span className={`ml-3 text-xs px-2 py-0.5 rounded-full ${
-                              doc.status === 'verified' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                              doc.status === 'verified' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-yellow-100 text-yellow-700'
                             }`}>
                               {doc.status}
                             </span>
@@ -262,11 +272,11 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
                           <span className="text-xs text-slate-400">{doc.uploadDate}</span>
                         </div>
                         {doc.extractedData && (
-                          <div className="bg-slate-50 p-3 rounded text-sm text-slate-600 space-y-1">
+                          <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded text-sm text-slate-600 dark:text-slate-300 space-y-1">
                             <p><strong>Type:</strong> {doc.extractedData.documentType}</p>
                             <p><strong>Parties:</strong> {doc.extractedData.parties?.join(', ')}</p>
                             {doc.extractedData.flags && doc.extractedData.flags.length > 0 && (
-                              <div className="mt-2 flex items-start text-red-600">
+                              <div className="mt-2 flex items-start text-red-600 dark:text-red-400">
                                 <AlertTriangle className="w-4 h-4 mr-1 flex-shrink-0" />
                                 <span>Flags: {doc.extractedData.flags.join(', ')}</span>
                               </div>
@@ -285,7 +295,7 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
           {activeTab === 'legal' && (
             <div className="space-y-6 animate-fade-in">
               <div className="flex justify-between items-center">
-                 <h3 className="text-xl font-bold text-slate-800">Legal Workflow</h3>
+                 <h3 className="text-xl font-bold text-slate-800 dark:text-white">Legal Workflow</h3>
                  <button 
                   onClick={handleGenerateNotice}
                   disabled={aiProcessing}
@@ -297,9 +307,9 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
               </div>
 
               {generatedNotice && (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-indigo-100 relative">
-                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wide mb-3">AI Generated Draft</h4>
-                  <div className="prose prose-sm max-w-none text-slate-700 bg-slate-50 p-4 rounded border border-slate-200">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-indigo-100 dark:border-indigo-900 relative">
+                  <h4 className="text-sm font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide mb-3">AI Generated Draft</h4>
+                  <div className="prose prose-sm max-w-none text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 p-4 rounded border border-slate-200 dark:border-slate-600">
                     <ReactMarkdown>{generatedNotice}</ReactMarkdown>
                   </div>
                   <div className="mt-4 flex gap-2">
@@ -309,23 +319,23 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
                     >
                       <Send className="w-3 h-3 mr-1" /> Approve & Send
                     </button>
-                    <button className="text-sm bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-50" onClick={() => setGeneratedNotice(null)}>Discard</button>
+                    <button className="text-sm bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white px-3 py-1.5 rounded hover:bg-slate-50" onClick={() => setGeneratedNotice(null)}>Discard</button>
                   </div>
                 </div>
               )}
 
-              <div className="relative border-l-2 border-slate-200 ml-3 space-y-8 py-4">
-                {asset.timeline.map((event, idx) => (
+              <div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 space-y-8 py-4">
+                {timeline.map((event, idx) => (
                   <div key={event.id} className="relative pl-8">
                     <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 ${
-                      event.status === 'completed' ? 'bg-green-500 border-green-500' : 'bg-white border-slate-300'
+                      event.status === 'completed' ? 'bg-green-500 border-green-500' : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-500'
                     }`}></div>
                     <div>
-                      <h4 className={`text-lg font-semibold ${event.status === 'completed' ? 'text-slate-800' : 'text-slate-500'}`}>
+                      <h4 className={`text-lg font-semibold ${event.status === 'completed' ? 'text-slate-800 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
                         {event.title}
                       </h4>
                       <p className="text-sm text-slate-400 mb-1">{event.date}</p>
-                      <p className="text-slate-600 bg-white p-3 rounded-lg border border-slate-100 shadow-sm inline-block min-w-[300px]">
+                      <p className="text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm inline-block min-w-[300px]">
                         {event.description}
                       </p>
                     </div>
@@ -353,32 +363,32 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
 
               {aiPrediction && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <p className="text-sm text-slate-500 mb-1">Predicted Recovery Value</p>
-                    <p className="text-3xl font-bold text-slate-900">
+                  <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Predicted Recovery Value</p>
+                    <p className="text-3xl font-bold text-slate-900 dark:text-white">
                       ₹{aiPrediction.predictedRecoveryValue?.toLocaleString()}
                     </p>
-                    <div className="mt-4 bg-green-50 text-green-700 px-3 py-1 rounded-full text-sm inline-block font-medium">
+                    <div className="mt-4 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 px-3 py-1 rounded-full text-sm inline-block font-medium">
                       {(aiPrediction.predictedRecoveryValue / asset.outstandingAmount * 100).toFixed(1)}% of Outstanding
                     </div>
                   </div>
 
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <p className="text-sm text-slate-500 mb-1">Probability of Sale (90 Days)</p>
+                  <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Probability of Sale (90 Days)</p>
                     <div className="flex items-end gap-2">
-                       <p className="text-3xl font-bold text-slate-900">
+                       <p className="text-3xl font-bold text-slate-900 dark:text-white">
                         {aiPrediction.saleProbability90Days}%
                       </p>
                       <span className="text-sm text-slate-400 mb-1">Confidence</span>
                     </div>
-                    <div className="w-full bg-slate-100 h-2 rounded-full mt-4 overflow-hidden">
+                    <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full mt-4 overflow-hidden">
                       <div className="bg-blue-600 h-full rounded-full" style={{ width: `${aiPrediction.saleProbability90Days}%` }}></div>
                     </div>
                   </div>
 
-                  <div className="col-span-full bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h4 className="font-bold text-slate-800 mb-2">AI Reasoning</h4>
-                    <p className="text-slate-600 leading-relaxed">
+                  <div className="col-span-full bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                    <h4 className="font-bold text-slate-800 dark:text-white mb-2">AI Reasoning</h4>
+                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
                       {aiPrediction.reasoning}
                     </p>
                   </div>
@@ -389,24 +399,24 @@ export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdat
 
           {/* AUCTION TAB */}
           {activeTab === 'auction' && (
-            <div className="flex flex-col items-center justify-center py-12 bg-white rounded-xl border border-slate-200 text-center animate-fade-in">
-              <Gavel className="w-16 h-16 text-slate-200 mb-4" />
-              <h3 className="text-xl font-bold text-slate-800">Auction Management</h3>
+            <div className="flex flex-col items-center justify-center py-12 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-center animate-fade-in">
+              <Gavel className="w-16 h-16 text-slate-200 dark:text-slate-600 mb-4" />
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white">Auction Management</h3>
               
               {asset.status === AssetStatus.AUCTION_SCHEDULED ? (
-                 <div className="mt-4 bg-green-50 p-6 rounded-xl">
-                   <p className="text-green-700 font-medium">Auction is currently Active/Scheduled</p>
-                   <p className="text-sm text-green-600 mt-1">Check the Auctions tab for live bidding status.</p>
+                 <div className="mt-4 bg-green-50 dark:bg-green-900/20 p-6 rounded-xl">
+                   <p className="text-green-700 dark:text-green-400 font-medium">Auction is currently Active/Scheduled</p>
+                   <p className="text-sm text-green-600 dark:text-green-500 mt-1">Check the Auctions tab for live bidding status.</p>
                  </div>
               ) : (
                 <>
-                  <p className="text-slate-500 max-w-md mx-auto mt-2 mb-6">
+                  <p className="text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-2 mb-6">
                     Set reserve prices, schedule e-auctions, and manage bidder participation.
                   </p>
                   <button 
                     onClick={handleScheduleAuction}
                     disabled={auctionScheduling}
-                    className="bg-slate-900 text-white px-5 py-2.5 rounded-lg hover:bg-slate-800 transition-colors flex items-center"
+                    className="bg-slate-900 dark:bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-slate-800 dark:hover:bg-blue-700 transition-colors flex items-center"
                   >
                     {auctionScheduling ? 'Scheduling...' : 'Schedule 12hr Auction'}
                   </button>
