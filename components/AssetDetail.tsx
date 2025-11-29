@@ -1,0 +1,349 @@
+import React, { useState } from 'react';
+import { Asset, Document, LegalEvent } from '../types';
+import { 
+  ArrowLeft, Upload, FileText, CheckCircle, AlertTriangle, 
+  Gavel, Clock, MapPin, Download, Sparkles 
+} from 'lucide-react';
+import { extractDocumentDetails, predictRecoveryValue, generateLegalNotice } from '../services/geminiService';
+import ReactMarkdown from 'react-markdown';
+
+interface AssetDetailProps {
+  asset: Asset;
+  onBack: () => void;
+  onUpdateAsset: (updatedAsset: Asset) => void;
+}
+
+type Tab = 'overview' | 'documents' | 'legal' | 'auction' | 'ai';
+
+export const AssetDetail: React.FC<AssetDetailProps> = ({ asset, onBack, onUpdateAsset }) => {
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [uploading, setUploading] = useState(false);
+  const [aiProcessing, setAiProcessing] = useState(false);
+  const [aiPrediction, setAiPrediction] = useState<any>(null);
+  const [generatedNotice, setGeneratedNotice] = useState<string | null>(null);
+
+  // Handle Document Upload & AI Extraction
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return;
+    const file = e.target.files[0];
+    setUploading(true);
+
+    try {
+      // 1. Read file
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64String = (reader.result as string).split(',')[1];
+        
+        // 2. AI Extraction
+        const extracted = await extractDocumentDetails(base64String, file.type);
+        
+        // 3. Add to asset state
+        const newDoc: Document = {
+          id: Date.now().toString(),
+          name: file.name,
+          type: extracted.documentType || 'Unknown',
+          uploadDate: new Date().toISOString().split('T')[0],
+          status: extracted.flags?.length ? 'flagged' : 'verified',
+          extractedData: extracted
+        };
+        
+        onUpdateAsset({
+          ...asset,
+          documents: [...asset.documents, newDoc]
+        });
+        setUploading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error(err);
+      setUploading(false);
+      alert("Failed to process document");
+    }
+  };
+
+  const runPrediction = async () => {
+    setAiProcessing(true);
+    try {
+      const result = await predictRecoveryValue(
+        asset.description,
+        asset.marketValue,
+        `${asset.address}, ${asset.city}`
+      );
+      setAiPrediction(result);
+    } catch (e) {
+      alert("AI Prediction Failed");
+    } finally {
+      setAiProcessing(false);
+    }
+  };
+
+  const handleGenerateNotice = async () => {
+    setAiProcessing(true);
+    try {
+      const notice = await generateLegalNotice(asset.borrowerName, asset.outstandingAmount, asset.description, "SARFAESI Section 13(2)");
+      setGeneratedNotice(notice);
+    } catch (e) {
+      alert("Notice Generation Failed");
+    } finally {
+      setAiProcessing(false);
+    }
+  }
+
+  return (
+    <div className="bg-white min-h-screen pb-12">
+      {/* Header */}
+      <div className="bg-slate-900 text-white p-6 sticky top-0 z-10 shadow-md">
+        <div className="max-w-7xl mx-auto">
+          <button 
+            onClick={onBack} 
+            className="flex items-center text-slate-300 hover:text-white mb-4 text-sm font-medium transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" /> Back to Assets
+          </button>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold">{asset.borrowerName}</h1>
+              <p className="text-slate-400 text-sm flex items-center mt-1">
+                <MapPin className="w-3 h-3 mr-1" /> {asset.address}, {asset.city}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <span className="px-3 py-1 rounded bg-slate-800 border border-slate-700 text-sm">
+                Loan: {asset.loanAccountNumber}
+              </span>
+              <span className={`px-3 py-1 rounded text-sm font-semibold ${asset.status === 'Sold' ? 'bg-green-600' : 'bg-blue-600'}`}>
+                {asset.status}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-4 gap-8">
+        
+        {/* Sidebar Navigation */}
+        <div className="lg:col-span-1 space-y-2">
+          {['overview', 'documents', 'legal', 'auction', 'ai'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab as Tab)}
+              className={`w-full text-left px-4 py-3 rounded-lg font-medium transition-colors flex items-center capitalize ${
+                activeTab === tab 
+                  ? 'bg-blue-50 text-blue-700 border border-blue-100' 
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {tab === 'overview' && <FileText className="w-4 h-4 mr-3" />}
+              {tab === 'documents' && <Upload className="w-4 h-4 mr-3" />}
+              {tab === 'legal' && <Gavel className="w-4 h-4 mr-3" />}
+              {tab === 'auction' && <Clock className="w-4 h-4 mr-3" />}
+              {tab === 'ai' && <Sparkles className="w-4 h-4 mr-3" />}
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Main Content Area */}
+        <div className="lg:col-span-3 space-y-6">
+          
+          {/* OVERVIEW TAB */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <img src={asset.imageUrl} alt="Asset" className="w-full h-64 object-cover" />
+                <div className="p-6">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4">Property Description</h3>
+                  <p className="text-slate-600 leading-relaxed">{asset.description}</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                  <p className="text-sm text-slate-500 mb-1">Outstanding</p>
+                  <p className="text-xl font-bold text-slate-900">${asset.outstandingAmount.toLocaleString()}</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                  <p className="text-sm text-slate-500 mb-1">Market Value</p>
+                  <p className="text-xl font-bold text-slate-900">${asset.marketValue.toLocaleString()}</p>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                  <p className="text-sm text-slate-500 mb-1">Reserve Price</p>
+                  <p className="text-xl font-bold text-slate-900">${asset.reservePrice.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DOCUMENTS TAB */}
+          {activeTab === 'documents' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-bold text-slate-800">Legal Documents</h3>
+                <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg cursor-pointer flex items-center shadow-sm transition-colors">
+                  <Upload className="w-4 h-4 mr-2" />
+                  {uploading ? 'Processing...' : 'Upload Document'}
+                  <input type="file" className="hidden" accept=".pdf,.jpg,.png" onChange={handleFileUpload} disabled={uploading} />
+                </label>
+              </div>
+
+              {asset.documents.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
+                  <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                  <p className="text-slate-500">No documents uploaded yet.</p>
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {asset.documents.map(doc => (
+                    <div key={doc.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold text-slate-800 flex items-center">
+                            {doc.name}
+                            <span className={`ml-3 text-xs px-2 py-0.5 rounded-full ${
+                              doc.status === 'verified' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {doc.status}
+                            </span>
+                          </h4>
+                          <span className="text-xs text-slate-400">{doc.uploadDate}</span>
+                        </div>
+                        {doc.extractedData && (
+                          <div className="bg-slate-50 p-3 rounded text-sm text-slate-600 space-y-1">
+                            <p><strong>Type:</strong> {doc.extractedData.documentType}</p>
+                            <p><strong>Parties:</strong> {doc.extractedData.parties?.join(', ')}</p>
+                            {doc.extractedData.flags && doc.extractedData.flags.length > 0 && (
+                              <div className="mt-2 flex items-start text-red-600">
+                                <AlertTriangle className="w-4 h-4 mr-1 flex-shrink-0" />
+                                <span>Flags: {doc.extractedData.flags.join(', ')}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* LEGAL TAB */}
+          {activeTab === 'legal' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="flex justify-between items-center">
+                 <h3 className="text-xl font-bold text-slate-800">Legal Workflow</h3>
+                 <button 
+                  onClick={handleGenerateNotice}
+                  disabled={aiProcessing}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center shadow-sm"
+                 >
+                   <Sparkles className="w-4 h-4 mr-2" />
+                   {aiProcessing ? 'Drafting...' : 'Generate 13(2) Notice'}
+                 </button>
+              </div>
+
+              {generatedNotice && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-indigo-100 relative">
+                  <h4 className="text-sm font-bold text-indigo-600 uppercase tracking-wide mb-3">AI Generated Draft</h4>
+                  <div className="prose prose-sm max-w-none text-slate-700 bg-slate-50 p-4 rounded border border-slate-200">
+                    <ReactMarkdown>{generatedNotice}</ReactMarkdown>
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    <button className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700">Approve & Send</button>
+                    <button className="text-sm bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-50" onClick={() => setGeneratedNotice(null)}>Discard</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="relative border-l-2 border-slate-200 ml-3 space-y-8 py-4">
+                {asset.timeline.map((event, idx) => (
+                  <div key={event.id} className="relative pl-8">
+                    <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 ${
+                      event.status === 'completed' ? 'bg-green-500 border-green-500' : 'bg-white border-slate-300'
+                    }`}></div>
+                    <div>
+                      <h4 className={`text-lg font-semibold ${event.status === 'completed' ? 'text-slate-800' : 'text-slate-500'}`}>
+                        {event.title}
+                      </h4>
+                      <p className="text-sm text-slate-400 mb-1">{event.date}</p>
+                      <p className="text-slate-600 bg-white p-3 rounded-lg border border-slate-100 shadow-sm inline-block min-w-[300px]">
+                        {event.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+           {/* AI PREDICTION TAB */}
+           {activeTab === 'ai' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-8 rounded-2xl text-white shadow-lg">
+                <h3 className="text-2xl font-bold mb-2">Gemini Recovery Intelligence</h3>
+                <p className="opacity-90 mb-6">Analyze market trends, asset condition, and location data to predict recovery outcomes.</p>
+                <button 
+                  onClick={runPrediction}
+                  disabled={aiProcessing}
+                  className="bg-white text-indigo-600 px-6 py-3 rounded-lg font-bold hover:bg-indigo-50 transition-colors shadow-sm flex items-center"
+                >
+                  {aiProcessing ? <Sparkles className="w-5 h-5 mr-2 animate-spin" /> : <Sparkles className="w-5 h-5 mr-2" />}
+                  {aiProcessing ? 'Analyzing...' : 'Run Prediction Model'}
+                </button>
+              </div>
+
+              {aiPrediction && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <p className="text-sm text-slate-500 mb-1">Predicted Recovery Value</p>
+                    <p className="text-3xl font-bold text-slate-900">
+                      ${aiPrediction.predictedRecoveryValue?.toLocaleString()}
+                    </p>
+                    <div className="mt-4 bg-green-50 text-green-700 px-3 py-1 rounded-full text-sm inline-block font-medium">
+                      {(aiPrediction.predictedRecoveryValue / asset.outstandingAmount * 100).toFixed(1)}% of Outstanding
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <p className="text-sm text-slate-500 mb-1">Probability of Sale (90 Days)</p>
+                    <div className="flex items-end gap-2">
+                       <p className="text-3xl font-bold text-slate-900">
+                        {aiPrediction.saleProbability90Days}%
+                      </p>
+                      <span className="text-sm text-slate-400 mb-1">Confidence</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-2 rounded-full mt-4 overflow-hidden">
+                      <div className="bg-blue-600 h-full rounded-full" style={{ width: `${aiPrediction.saleProbability90Days}%` }}></div>
+                    </div>
+                  </div>
+
+                  <div className="col-span-full bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h4 className="font-bold text-slate-800 mb-2">AI Reasoning</h4>
+                    <p className="text-slate-600 leading-relaxed">
+                      {aiPrediction.reasoning}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* AUCTION TAB (Placeholder) */}
+          {activeTab === 'auction' && (
+            <div className="flex flex-col items-center justify-center py-12 bg-white rounded-xl border border-slate-200 text-center">
+              <Gavel className="w-16 h-16 text-slate-200 mb-4" />
+              <h3 className="text-xl font-bold text-slate-800">Auction Management</h3>
+              <p className="text-slate-500 max-w-md mx-auto mt-2 mb-6">
+                Set reserve prices, schedule e-auctions, and manage bidder participation.
+              </p>
+              <button className="bg-slate-900 text-white px-5 py-2.5 rounded-lg hover:bg-slate-800">
+                Schedule Auction
+              </button>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+};
