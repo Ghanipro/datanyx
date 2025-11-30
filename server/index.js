@@ -7,10 +7,18 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Import encryption middleware
+const { encryptionAudit, verifyDataIntegrity, checkEncryptedDataAccess } = require('./middleware/encryptionMiddleware');
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
+
+// Apply encryption security middleware
+app.use(encryptionAudit);
+app.use(verifyDataIntegrity);
+app.use(checkEncryptedDataAccess);
 
 if (!fs.existsSync('./uploads')) {
     fs.mkdirSync('./uploads');

@@ -95,7 +95,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   <input 
                     type="text" 
                     required={mode === 'signup'}
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-900"
                     placeholder="John Doe"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -111,7 +111,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <input 
                   type="email" 
                   required
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-900"
                   placeholder="officer@bank.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -127,7 +127,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   <input 
                     type="password" 
                     required
-                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-900"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}

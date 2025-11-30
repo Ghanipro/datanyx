@@ -3,6 +3,8 @@ const router = express.Router();
 const Asset = require('../models/Asset');
 const multer = require('multer');
 const path = require('path');
+const encryptionService = require('../utils/encryption');
+const fs = require('fs');
 
 // Configure Multer for file uploads
 const storage = multer.diskStorage({
@@ -19,7 +21,46 @@ const upload = multer({ storage: storage });
 router.get('/', async(req, res) => {
     try {
         const assets = await Asset.find();
-        res.json(assets);
+
+        // Decrypt sensitive data before sending to client
+        const decryptedAssets = assets.map(asset => {
+            const assetObj = asset.toObject();
+
+            // Decrypt documents if encrypted
+            if (assetObj.documents && assetObj.documents.length > 0) {
+                assetObj.documents = assetObj.documents.map(doc => {
+                    if (doc.isEncrypted && doc.encryptedContent) {
+                        try {
+                            doc.extractedData = encryptionService.decrypt(doc.encryptedContent);
+                            delete doc.encryptedContent; // Don't send encrypted content to client
+                        } catch (err) {
+                            console.error('Error decrypting document:', err);
+                            doc.extractedData = { error: 'Unable to decrypt document' };
+                        }
+                    }
+                    return doc;
+                });
+            }
+
+            // Decrypt sensitive asset data if encrypted
+            if (assetObj.sensitiveData && assetObj.encryptionMetadata && assetObj.encryptionMetadata.isEncrypted) {
+                try {
+                    if (assetObj.sensitiveData.encryptedBorrowerDetails) {
+                        assetObj.borrowerDetails = encryptionService.decrypt(assetObj.sensitiveData.encryptedBorrowerDetails);
+                    }
+                    if (assetObj.sensitiveData.encryptedFinancialData) {
+                        assetObj.financialData = encryptionService.decrypt(assetObj.sensitiveData.encryptedFinancialData);
+                    }
+                } catch (err) {
+                    console.error('Error decrypting sensitive data:', err);
+                }
+                delete assetObj.sensitiveData; // Remove encrypted wrapper
+            }
+
+            return assetObj;
+        });
+
+        res.json(decryptedAssets);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -30,7 +71,41 @@ router.get('/:id', async(req, res) => {
     try {
         const asset = await Asset.findById(req.params.id);
         if (!asset) return res.status(404).json({ message: 'Asset not found' });
-        res.json(asset);
+
+        const assetObj = asset.toObject();
+
+        // Decrypt documents
+        if (assetObj.documents && assetObj.documents.length > 0) {
+            assetObj.documents = assetObj.documents.map(doc => {
+                if (doc.isEncrypted && doc.encryptedContent) {
+                    try {
+                        doc.extractedData = encryptionService.decrypt(doc.encryptedContent);
+                        delete doc.encryptedContent;
+                    } catch (err) {
+                        console.error('Error decrypting document:', err);
+                        doc.extractedData = { error: 'Unable to decrypt document' };
+                    }
+                }
+                return doc;
+            });
+        }
+
+        // Decrypt sensitive data
+        if (assetObj.sensitiveData && assetObj.encryptionMetadata && assetObj.encryptionMetadata.isEncrypted) {
+            try {
+                if (assetObj.sensitiveData.encryptedBorrowerDetails) {
+                    assetObj.borrowerDetails = encryptionService.decrypt(assetObj.sensitiveData.encryptedBorrowerDetails);
+                }
+                if (assetObj.sensitiveData.encryptedFinancialData) {
+                    assetObj.financialData = encryptionService.decrypt(assetObj.sensitiveData.encryptedFinancialData);
+                }
+            } catch (err) {
+                console.error('Error decrypting sensitive data:', err);
+            }
+            delete assetObj.sensitiveData;
+        }
+
+        res.json(assetObj);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -62,7 +137,7 @@ router.post('/', cpUpload, async(req, res) => {
             assetData.imageUrl = req.files['image'][0].path.replace(/\\/g, "/");
         }
 
-        // Process Mandatory Document
+        // Process Mandatory Document with ENCRYPTION
         const docs = [];
         if (req.files['document']) {
             const docFile = req.files['document'][0];
@@ -77,6 +152,10 @@ router.post('/', cpUpload, async(req, res) => {
                 console.error("Failed to parse extractedData", e);
             }
 
+            // Encrypt the extracted data for sensitive storage
+            const encryptedExtractedData = encryptionService.encrypt(extractedData);
+            const dataHash = encryptionService.createHash(extractedData);
+
             docs.push({
                 id: Date.now().toString(),
                 name: docFile.originalname,
@@ -84,12 +163,52 @@ router.post('/', cpUpload, async(req, res) => {
                 uploadDate: new Date().toISOString().split('T')[0],
                 status: 'verified',
                 filePath: docFile.path.replace(/\\/g, "/"),
-                extractedData: extractedData
+                isEncrypted: true,
+                encryptedContent: encryptedExtractedData,
+                dataIntegrityHash: dataHash,
+                encryptionTimestamp: new Date(),
+                encryptedBy: (req.user && req.user.id) || 'system'
             });
         } else {
             return res.status(400).json({ message: "Mandatory document is missing" });
         }
         assetData.documents = docs;
+
+        // Encrypt sensitive borrower and financial data
+        const borrowerDetails = {
+            name: assetData.borrowerName,
+            loanAccount: assetData.loanAccountNumber
+        };
+
+        const financialData = {
+            outstanding: assetData.outstandingAmount,
+            marketValue: assetData.marketValue,
+            reservePrice: assetData.reservePrice
+        };
+
+        assetData.sensitiveData = {
+            encryptedBorrowerDetails: encryptionService.encrypt(borrowerDetails),
+            encryptedFinancialData: encryptionService.encrypt(financialData)
+        };
+
+        // Add encryption metadata
+        assetData.encryptionMetadata = {
+            isEncrypted: true,
+            encryptionMethod: 'aes-256-cbc',
+            encryptedAt: new Date(),
+            encryptedBy: (req.user && req.user.id) || 'system',
+            dataClassification: 'confidential'
+        };
+
+        assetData.dataIntegrityHash = encryptionService.createHash(assetData);
+
+        // Add audit log entry
+        assetData.auditLog = [{
+            action: 'asset_created',
+            timestamp: new Date(),
+            userId: req.user && id || 'system',
+            details: 'Asset created with encrypted sensitive data'
+        }];
 
         // Process Keywords (sent as string from frontend)
         if (typeof assetData.keywords === 'string') {
@@ -98,7 +217,20 @@ router.post('/', cpUpload, async(req, res) => {
 
         const asset = new Asset(assetData);
         const newAsset = await asset.save();
-        res.status(201).json(newAsset);
+
+        // Return decrypted version to client
+        const responseAsset = newAsset.toObject();
+        if (responseAsset.documents && responseAsset.documents.length > 0) {
+            responseAsset.documents = responseAsset.documents.map(doc => {
+                if (doc.encryptedContent) {
+                    doc.extractedData = encryptionService.decrypt(doc.encryptedContent);
+                    delete doc.encryptedContent;
+                }
+                return doc;
+            });
+        }
+
+        res.status(201).json(responseAsset);
     } catch (err) {
         console.error(err);
         res.status(400).json({ message: err.message });
@@ -142,20 +274,44 @@ router.post('/:id/documents', upload.single('file'), async(req, res) => {
 
         const extractedData = JSON.parse(req.body.extracted_data || '{}');
 
+        // Encrypt the extracted data
+        const encryptedExtractedData = encryptionService.encrypt(extractedData);
+        const dataHash = encryptionService.createHash(extractedData);
+
         const newDoc = {
             id: Date.now().toString(),
             name: req.body.name || req.file.originalname,
             type: req.body.doc_type || 'Unknown',
             uploadDate: new Date().toISOString().split('T')[0],
             status: req.body.status || 'verified',
-            extractedData: extractedData,
-            filePath: req.file ? req.file.path : null
+            filePath: req.file ? req.file.path : null,
+            isEncrypted: true,
+            encryptedContent: encryptedExtractedData,
+            dataIntegrityHash: dataHash,
+            encryptionTimestamp: new Date(),
+            encryptedBy: req.user && id || 'system'
         };
 
         asset.documents.push(newDoc);
+
+        // Add audit log
+        asset.auditLog.push({
+            action: 'document_uploaded',
+            timestamp: new Date(),
+            userId: req.user && id || 'system',
+            details: `Document uploaded and encrypted: ${newDoc.name}`
+        });
+
         await asset.save();
 
-        res.status(201).json(newDoc);
+        // Return decrypted version to client
+        const responseDoc = JSON.parse(JSON.stringify(newDoc));
+        if (responseDoc.encryptedContent) {
+            responseDoc.extractedData = encryptionService.decrypt(responseDoc.encryptedContent);
+            delete responseDoc.encryptedContent;
+        }
+
+        res.status(201).json(responseDoc);
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: err.message });
